@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>别点我按钮</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      height: 100vh;
+      overflow: hidden;
+      background: #0a0a1a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #fff;
+      transition: background-color 3s ease, color 3s ease;
+    }
+
+    .btn-glow {
+      position: fixed;
+      width: 420px;
+      height: 420px;
+      border-radius: 50%;
+      background: radial-gradient(
+        circle,
+        rgba(43, 43, 82, 0.85) 0%,
+        rgba(43, 43, 82, 0.35) 35%,
+        rgba(10, 10, 26, 0) 70%
+      );
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .runaway-btn {
+      position: fixed;
+      z-index: 1;
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      border: none;
+      outline: none;
+      background: #ff3b3b;
+      color: #fff;
+      font-size: 22px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 18px 30px rgba(0, 0, 0, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+    }
+
+    .runaway-btn:active {
+      transform: scale(0.95);
+    }
+
+    .center-message {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 0 24px;
+      font-size: 32px;
+      font-weight: 600;
+      font-family: "Orbitron", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0.12em;
+      z-index: 10;
+      color: #e5e7eb;
+      opacity: 1;
+      transition: opacity 3s ease;
+      text-shadow: none;
+    }
+
+    .page-404 {
+      position: fixed;
+      left: 0;
+      right: 0;
+      top: 25%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.15em;
+      z-index: 15;
+      text-shadow: none;
+      font-size: 48px;
+      font-weight: 400;
+      color: #000000;
+      font-family: Arial, Helvetica, system-ui, -apple-system, sans-serif;
+    }
+
+    .page-404 .sub {
+      font-size: 0.75em;
+    }
+  </style>
+</head>
+<body>
+  <div class="btn-glow" id="btn-glow"></div>
+  <button class="runaway-btn" id="runaway">点我</button>
+
+  <script>
+    (function () {
+      const SAFE_RADIUS = 140; // 鼠标靠近到这个范围就开始逃
+      const EXTRA_DIST = 90;   // 额外多跑一点，保证跟不上
+      const BUTTON_SIZE = 120;
+      const HALF_SIZE = BUTTON_SIZE / 2;
+
+      const btn = document.getElementById('runaway');
+      const btnGlow = document.getElementById('btn-glow');
+      let isGameOver = false;
+
+      let currentX = window.innerWidth / 2;
+      let currentY = window.innerHeight / 2;
+      let targetX = currentX;
+      let targetY = currentY;
+
+      function applyPosition() {
+        btn.style.left = currentX + 'px';
+        btn.style.top = currentY + 'px';
+        btn.style.transform = 'translate(-50%, -50%)';
+        btnGlow.style.left = currentX + 'px';
+        btnGlow.style.top = currentY + 'px';
+        btnGlow.style.transform = 'translate(-50%, -50%)';
+      }
+      applyPosition();
+
+      function clampToViewport(x, y) {
+        const minX = HALF_SIZE;
+        const maxX = window.innerWidth - HALF_SIZE;
+        const minY = HALF_SIZE;
+        const maxY = window.innerHeight - HALF_SIZE;
+        return {
+          x: Math.min(maxX, Math.max(minX, x)),
+          y: Math.min(maxY, Math.max(minY, y))
+        };
+      }
+
+      function animate() {
+        if (isGameOver) {
+          return;
+        }
+        const lerpFactor = 0.18;
+        currentX += (targetX - currentX) * lerpFactor;
+        currentY += (targetY - currentY) * lerpFactor;
+        applyPosition();
+        requestAnimationFrame(animate);
+      }
+      requestAnimationFrame(animate);
+
+      document.addEventListener('mousemove', (e) => {
+        if (isGameOver) return;
+        const mouseX = e.clientX;
+        const mouseY = e.clientY;
+
+        const dx = currentX - mouseX;
+        const dy = currentY - mouseY;
+        const dist = Math.hypot(dx, dy) || 0.001;
+
+        if (dist >= SAFE_RADIUS) {
+          return; // 太远了，不用逃
+        }
+
+        // 逃跑的基础步长：越靠近跑得越远
+        const baseStep = SAFE_RADIUS - dist + EXTRA_DIST;
+
+        // 归一化的“远离鼠标”的方向
+        const vx = dx / dist;
+        const vy = dy / dist;
+
+        const candidates = [];
+
+        function pushCandidate(nx, ny) {
+          const c = clampToViewport(nx, ny);
+          const ddx = c.x - mouseX;
+          const ddy = c.y - mouseY;
+          const score = ddx * ddx + ddy * ddy; // 离鼠标越远分越高
+          candidates.push({ x: c.x, y: c.y, score });
+        }
+
+        // 1. 直接沿着“远离鼠标”的反方向逃跑
+        pushCandidate(currentX + vx * baseStep, currentY + vy * baseStep);
+
+        // 2. 在边缘被卡住时，沿着边界“绕圈”逃跑（两个切向方向）
+        pushCandidate(currentX - vy * baseStep, currentY + vx * baseStep);
+        pushCandidate(currentX + vy * baseStep, currentY - vx * baseStep);
+
+        // 选一个最终离鼠标最远的目标点
+        let best = candidates[0];
+        for (let i = 1; i < candidates.length; i++) {
+          if (candidates[i].score > best.score) best = candidates[i];
+        }
+
+        targetX = best.x;
+        targetY = best.y;
+      });
+
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isGameOver) return;
+
+        isGameOver = true;
+
+        // 隐藏按钮与光晕
+        btn.style.display = 'none';
+        btnGlow.style.display = 'none';
+
+        // 创建居中文字容器
+        const msg = document.createElement('div');
+        msg.className = 'center-message';
+        msg.textContent = '好吧，你赢了。这个网页即将自毁...';
+        document.body.appendChild(msg);
+
+        // 1 秒后开始背景渐白 + 文案淡出（各 3 秒）
+        setTimeout(() => {
+          document.body.style.backgroundColor = '#ffffff';
+          msg.style.opacity = '0';
+
+          // 2 秒后瞬间显示 404，无淡入（比过渡早 1 秒）
+          setTimeout(() => {
+            msg.remove();
+            const page404 = document.createElement('div');
+            page404.className = 'page-404';
+            const line1 = document.createElement('div');
+            line1.textContent = '404';
+            const line2 = document.createElement('div');
+            line2.className = 'sub';
+            line2.textContent = 'not found';
+            page404.appendChild(line1);
+            page404.appendChild(line2);
+            document.body.appendChild(page404);
+          }, 2000);
+        }, 1000);
+      });
+
+      window.addEventListener('resize', () => {
+        const c1 = clampToViewport(currentX, currentY);
+        currentX = c1.x;
+        currentY = c1.y;
+        const c2 = clampToViewport(targetX, targetY);
+        targetX = c2.x;
+        targetY = c2.y;
+        applyPosition();
+      });
+    })();
+  </script>
+</body>
+</html>
